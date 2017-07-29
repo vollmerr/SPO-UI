@@ -1,0 +1,252 @@
+import React from 'react';
+import { Dispatch } from 'redux';
+import { connect } from 'react-redux';
+import { reduxForm } from 'redux-form';
+import { SPHttpClient, SPHttpClientResponse } from '@microsoft/sp-http';
+// import { escape } from '@microsoft/sp-lodash-subset';
+
+import { IDemoProps } from './IAppProps';
+import { updateTitle, addList, getLists } from '../../actions/listActions';
+import { RootState } from '../../state';
+
+import { Fabric } from 'office-ui-fabric-react/lib/Fabric';
+import { PrimaryButton, IButtonProps } from 'office-ui-fabric-react/lib/Button';
+import { STATUS } from '../../constants/status';
+
+import DisplayError from '../DisplayError';
+import DisplayLoading from '../DisplayLoading';
+import Fields from '../Fields';
+
+
+function mapStateToProps(state, ownProps) {
+  return {
+    title: state.lists.title,
+    list: state.lists.lists[0]
+  };
+}
+
+const mapDispatchToProps = (dispatch) => ({
+  updateTitle: (title) => {
+    dispatch(updateTitle(title));
+  },
+  getLists: (spHttpClient, currentWebUrl, title) => (
+    dispatch(getLists(spHttpClient, currentWebUrl, title))
+  ),
+  addList: (spHttpClient, currentWebUrl, title) => {
+    dispatch(addList(spHttpClient, currentWebUrl, title));
+  },
+});
+
+
+
+
+import { Field } from 'redux-form'
+@(connect(mapStateToProps, mapDispatchToProps) as any)
+@(reduxForm({
+  form: 'test-form',
+}))
+class App extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      listTitle: 'testList',
+      listItemEntityTypeName: null,
+      etag: null,
+      status: STATUS.LOADING,
+      list: {
+        Id: null,
+        Title: '',
+        firstName: '',
+        lastName: '',
+        phoneNumber: '',
+        testRequired: '',
+      },
+    };
+  }
+
+  componentDidMount() {
+    const { getLists, spHttpClient, currentWebUrl } = this.props;
+    const { listTitle } = this.state;
+
+    getLists(spHttpClient, currentWebUrl, listTitle)
+      .then(this.getListItemEntityTypeName)
+      .then(() => {
+        this.setState({
+          status: STATUS.READY,
+          list: this.props.list,
+        });
+      });
+  }
+
+
+
+  handleChange = (value, name) => {
+    const newState = { ...this.state };
+    newState.list[name] = value;
+
+    this.setState(newState);
+  }
+
+
+
+  handleSubmit = (event) => {
+    this.setState({
+      status: STATUS.SUBMITTING
+    });
+
+    this.getListItemEntityTypeName()
+      .then(this.getEtag)
+      .then(this.handleUpdate)
+      .catch(error => this.setState({ status: STATUS.ERROR }));
+  }
+
+
+  handleUpdate = () => {
+    return new Promise((resolve, reject) => {
+      const { spHttpClient, currentWebUrl } = this.props;
+      const { list, listTitle, listItemEntityTypeName, etag } = this.state;
+      const url = `${currentWebUrl}/_api/web/lists/getbytitle('${listTitle}')/items(${list.Id})`;
+
+      const fields = [
+        'Id',
+        'Title',
+        'firstName',
+        'lastName',
+        'phoneNumber',
+        'testRequired',
+      ];
+      const filteredList = {};
+      fields.forEach(field => filteredList[field] = list[field]);
+
+      const body = JSON.stringify({
+        __metadata: {
+          type: listItemEntityTypeName,
+        },
+        ...filteredList,
+      });
+
+      const config = {
+        body,
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'Content-type': 'application/json;odata=verbose',
+          'odata-version': '',
+          'IF-MATCH': etag,
+          'X-HTTP-Method': 'MERGE',
+        },
+      };
+
+      spHttpClient.post(url, SPHttpClient.configurations.v1, config)
+        .then(() => resolve(this.setState({ status: STATUS.READY })))
+        .catch(error => reject(error));
+    });
+  }
+
+
+  getEtag = () => {
+    return new Promise((resolve, reject) => {
+      const { spHttpClient, currentWebUrl } = this.props;
+      const { list, listTitle } = this.state;
+      const url = `${currentWebUrl}/_api/web/lists/getbytitle('${listTitle}')/items(${list.Id})?$select=Id`;
+      const config = {
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'odata-version': '',
+        },
+      };
+
+      spHttpClient.get(url, SPHttpClient.configurations.v1, config)
+        .then((response) => {
+          this.setState({
+            etag: response.headers.get('ETag'),
+          });
+          resolve();
+        })
+        .catch(error => reject(error));
+    });
+  }
+
+
+  getListItemEntityTypeName = () => {
+    return new Promise((resolve, reject) => {
+      const { spHttpClient, currentWebUrl } = this.props;
+      const { listTitle, listItemEntityTypeName } = this.state;
+      const url = `${currentWebUrl}/_api/web/lists/getbytitle('${listTitle}')?$select=ListItemEntityTypeFullName`;
+      const config = {
+        headers: {
+          Accept: 'application/json;odata=nometadata',
+          'odata-version': '',
+        }
+      };
+
+      if (listItemEntityTypeName) {
+        return resolve();
+      }
+
+      spHttpClient.get(url, SPHttpClient.configurations.v1, config)
+        .then((response) => {
+          this.setState({
+            etag: response.headers.get('ETag')
+          });
+
+          return response.json();
+        })
+        .then((response) => {
+          this.setState({
+            listItemEntityTypeName: response.ListItemEntityTypeFullName
+          });
+
+          return resolve();
+        })
+        .catch(error => reject(error));
+    });
+  }
+
+
+  render() {
+    const { list, status } = this.state;
+
+    const disabled = status !== STATUS.READY;
+
+    return (
+      <Fabric>
+
+        <Field
+          name="aaa"
+          component="input"
+          type="text"
+          placeholder="Last Name"
+        />
+
+        <h1>Test Form3</h1>
+
+        <DisplayError status={status} />
+
+        <DisplayLoading status={status} />
+
+        <Fields
+          list={list}
+          onChange={this.handleChange}
+          disabled={disabled}
+        />
+
+        <PrimaryButton
+          text={'Submit'}
+          onClick={this.handleSubmit}
+          disabled={disabled}
+        />
+
+      </Fabric>
+    );
+  }
+}
+
+export default App;
+
+// export default connect(mapStateToProps, mapDispatchToProps)(App);
+
+// reduxForm({
+//   form: 'wizard',
+//   destroyOnUnmount: false,
+//   forceUnregisterOnUnmount: false,
+// })(

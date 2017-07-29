@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "es5",
+    "forceConsistentCasingInFileNames": true,
+    "module": "commonjs",
+    "jsx": "react",
+    "allowJs": true,
+    "declaration": false,
+    "sourceMap": true,
+    "experimentalDecorators": true,
+	  "skipLibCheck": true,
+    "downlevelIteration":true,
+    "types": [
+      "es6-promise",
+      "es6-collections",
+      "webpack-env"
+    ]
+  }
+}
